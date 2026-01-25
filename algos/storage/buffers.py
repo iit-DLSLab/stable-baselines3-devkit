@@ -231,7 +231,7 @@ class ReplayBuffer(TorchBuffer):
                 observations=observations,
                 actions=self.actions[env_indices, step_indices].to(self.out_device),
                 next_observations=next_observations,
-                dones=self.dones.to(self.out_device),
+                dones=self.dones[env_indices, step_indices].to(self.out_device),
                 rewards=self.rewards[env_indices, step_indices].to(self.out_device),
                 mask=torch.ones_like(self.rewards[env_indices, step_indices]).to(self.out_device),
             )
@@ -637,7 +637,7 @@ class TransformerRolloutBuffer(TorchBuffer):
                     current_cache_size = self._get_actual_cache_size(attn_cache)
 
                     # Get incremental update for each environment
-                    prev_size = self.cache_sizes[:, max(self.pos-1, 0), i]
+                    prev_size = self.cache_sizes[:, self.pos, i]
                     new_size = current_cache_size.to(self.device)
                     new_tokens_per_env = torch.where(new_size > prev_size, new_size - prev_size, new_size)
                     assert (new_tokens_per_env <= self.max_tokens).all(), "Single step cache size is exceeding the (global) maximum number of tokens stored in the buffer."
@@ -650,7 +650,7 @@ class TransformerRolloutBuffer(TorchBuffer):
 
                     # Store how many new tokens were added for each env at this step
                     self.cache_step_sizes[:, self.pos+1, i] = new_tokens_per_env.clip(min=0, max=self.max_step_tokens)
-                    self.cache_sizes[:, self.pos+1, i] = torch.where(new_size > prev_size, prev_size+self.cache_step_sizes[:, self.pos, i], self.cache_step_sizes[:, self.pos, i]).clip(min=0, max=self.max_tokens)
+                    self.cache_sizes[:, self.pos+1, i] = torch.where(new_size > prev_size, prev_size+self.cache_step_sizes[:, self.pos+1, i], self.cache_step_sizes[:, self.pos+1, i]).clip(min=0, max=self.max_tokens)
 
                 for i, mask_cache in enumerate(mask):
                     self.last_mask[:, i, -min(mask_cache.size(1), self.max_tokens):, -min(mask_cache.size(2), self.max_tokens):] = mask_cache[:, -min(mask_cache.size(1), self.max_tokens):, -min(mask_cache.size(2), self.max_tokens):]

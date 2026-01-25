@@ -284,7 +284,7 @@ def get_activation_fn(activation: str) -> Callable:
         return F.glu
     if activation == "tanh":
         return F.tanh
-    raise RuntimeError(f"activation should be relu/gelu/glu, not {activation}.")
+    raise RuntimeError(f"activation should be relu/gelu/glu/tanh, not {activation}.")
 
 
 def get_activation_mod(activation: str) -> nn.Module:
@@ -292,7 +292,7 @@ def get_activation_mod(activation: str) -> nn.Module:
     Return an activation module given a string identifier.
 
     Args:
-        activation: String identifier for activation function ('relu', 'gelu', 'glu', 'tanh')
+        activation: String identifier for activation function ('lrelu','relu', 'gelu', 'elu', 'silu', 'glu', 'tanh')
 
     Returns:
         Activation module from torch.nn
@@ -308,11 +308,13 @@ def get_activation_mod(activation: str) -> nn.Module:
         return nn.GELU()
     if activation == "elu":
         return nn.ELU()
+    if activation == "silu":
+        return nn.SiLU()
     if activation == "glu":
         return nn.GLU()
     if activation == "tanh":
         return nn.Tanh()
-    raise RuntimeError(f"activation should be relu/gelu/elu/glu, not {activation}.")
+    raise RuntimeError(f"activation should be lrelu/relu/gelu/elu/silu/glu/tanh, not {activation}.")
 
 
 def wasserstein_gaussian(mean1, std1, mean2, std2, eps=1e-8):

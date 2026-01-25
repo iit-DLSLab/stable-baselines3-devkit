@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from gymnasium import spaces
-from nn_utils import get_activation_mod
+from algos.policies.modules.nn_utils import get_activation_mod
 from stable_baselines3.common.distributions import (
     BernoulliDistribution,
     CategoricalDistribution,

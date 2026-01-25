@@ -1,28 +1,40 @@
-# Reference: https://github.com/DLR-RM/rl-baselines3-zoo/blob/master/hyperparams/ppo.yml#L32
+# Reference: https://github.com/amazon-far/holosoma/blob/main/src/holosoma/holosoma/config_values/algo.py
 seed: 42
 device: "cuda:0"
 
-n_timesteps: 1_200_000_000
-batch_size: 512
+n_timesteps: 25_000_000
+batch_size: 8192
 lr_scheduler: "constant"
 
-gamma: 0.983100250213744
+gamma: 0.97
 lr_value: !!float 3e-4
-tau: 0.0023055560568780655  # Soft update coefficient (Polyak update)
+tau: 0.125  # Soft update coefficient (Polyak update)
 ent_coef: "auto"
-learning_starts: 2000
-use_sde: false
+learning_starts: 10
 train_freq: !!seq [1, "step"]
-gradient_steps: 32
-target_update_interval: 8
+gradient_steps: 8
+target_update_interval: 1
+policy_frequency: 4  # Update actor every N gradient steps
+target_entropy_ratio: 0.0  # Scale factor for target entropy (0 = -action_dim)
+max_grad_norm: 0.0  # 0 = no gradient clipping
+mixed_precision: "bf16"
 
-agent_class: 'sac_agent.SAC'
+agent_class: 'fastsac_agent.FastSAC'
 policy: 'MlpPolicy'
 policy_kwargs:
-  net_arch: !!seq [128, 128, 128]
-  clip_mean: !!float 2.0
+  actor_hidden_dim: 512
+  critic_hidden_dim: 768
+  use_layer_norm: true
+  log_std_max: 0.0
+  log_std_min: -5.0
+  use_tanh: true
+  n_critics: 2
+  num_atoms: 101
+  v_min: -20.0
+  v_max: 20.0
   # Training parameters
   optimizer_kwargs:
+    weight_decay: 0.001
     eps: !!float 1e-08
 
 replay_buffer_class: 'ReplayBuffer'

@@ -168,7 +168,7 @@ class Gym_2_Mlp(GymPreprocessor):
 
         self.proc_observation_space = spaces.Dict({
             "privileged": spaces.Box(low=-1, high=1, shape=(0,), dtype=np.float32),
-            "state": spaces.Box(low=-10, high=10, shape=(36,), dtype=np.float32),
+            "state": spaces.Box(low=-10, high=10, shape=self.observation_space["state"].shape, dtype=np.float32),
             # "images": spaces.Box(low=-1, high=1, shape=(2, 3, 94, 94), dtype=np.float32),
         })
 
@@ -235,16 +235,16 @@ Gym_2_Tr = Gym_2_Mlp
 
 class Gym_2_Sac(GymPreprocessor):
 
-    def __init__(self, **kwargs):
+    def __init__(self, use_tanh=True, **kwargs):
+        self.use_tanh = use_tanh
 
         super().__init__(**kwargs)
 
         self.proc_observation_space = spaces.Dict({
             "privileged": spaces.Box(low=-1, high=1, shape=(0,), dtype=np.float32),
-            "state": spaces.Box(low=-10, high=10, shape=(36,), dtype=np.float32),
+            "state": spaces.Box(low=-10, high=10, shape=self.observation_space["state"].shape, dtype=np.float32),
             # "images": spaces.Box(low=-1, high=1, shape=(2, 3, 94, 94), dtype=np.float32),
         })
-        self.proc_action_space = spaces.Box(low=-1, high=1, shape=self.action_space.shape)
 
         # see https://araffin.github.io/post/tune-sac-isaac-sim/
         # self.action_space_high = torch.tensor([1.1, 2.6, 0.7, 1.9, 1.3, 2.6, 3.4, 3.8, 3.4, 3.4, 1.9, 2.1], device=self.device)
@@ -252,6 +252,7 @@ class Gym_2_Sac(GymPreprocessor):
 
         self.action_space_high = torch.tensor(self.proc_action_space.high, device=self.device)
         self.action_space_low = torch.tensor(self.proc_action_space.low, device=self.device)
+        self.proc_action_space = spaces.Box(low=self.proc_action_space.low, high=self.proc_action_space.high, shape=self.action_space.shape)
 
     def forward(self, observations=None):
         assert isinstance(observations, dict), "Processing implemented only for `Dict` observations. Did you wrap correctly the datasource to obtain here the shared data source?"
@@ -268,14 +269,20 @@ class Gym_2_Sac(GymPreprocessor):
     def forward_post(self, actions: Union[torch.Tensor, Dict[str, torch.Tensor]]) -> Union[Tuple[torch.Tensor, torch.Tensor], Dict[str, torch.Tensor]]:
         assert isinstance(self.action_space, (spaces.Box, spaces.Discrete)), "Processing implemented only for `Box` action space"
 
-        # Rescale the action from [low, high] to [-1, 1]
         if isinstance(self.action_space, spaces.Box):
-            # We store the scaled action in the buffer
-            buffer_actions = 2.0 * ((actions - self.action_space_low) / (self.action_space_high - self.action_space_low)) - 1.0
-            actions = self.action_space_low + (0.5 * (buffer_actions + 1.0) * (self.action_space_high - self.action_space_low))
+            if self.use_tanh:
+                # Policy outputs already tanh-squashed actions in [-1, 1] (e.g., SB3's SquashedDiagGaussian)
+                # Buffer stores [-1, 1], env receives scaled [low, high]
+                buffer_actions = actions  # Already in [-1, 1]
+                env_actions = self.action_space_low + (0.5 * (actions + 1.0) * (self.action_space_high - self.action_space_low))
+            else:
+                # Policy outputs actions in [low, high] range
+                # Buffer stores normalized [-1, 1], env receives original [low, high]
+                buffer_actions = 2.0 * ((actions - self.action_space_low) / (self.action_space_high - self.action_space_low)) - 1.0
+                env_actions = actions
         else:
             # Discrete case, no need to normalize or clip
             buffer_actions = actions
-            actions = actions
+            env_actions = actions
 
-        return buffer_actions, actions
+        return buffer_actions, env_actions

@@ -65,7 +65,6 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
         lr_warmup_fraction: Optional[float] = None,
         lr_linear_end_value: Optional[float] = 1e-8,
         lr_linear_end_fraction: Optional[float] = 0.005,
-        n_steps: int = 1,
         batch_size: int = 256,
         gamma: float = 0.99,
         tau: float = 0.005,
@@ -81,7 +80,7 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
         use_sde_at_warmup: bool = False,
         mixed_precision: Optional[str] = None,
         replay_buffer_class: Optional[type[ReplayBuffer]] = None,
-        replay_buffer_kwargs: Optional[dict[str, Any]] = None,
+        replay_buffer_kwargs: Optional[Dict[str, Any]] = None,
         replay_buffer_checkpoint: Optional[Union[str, Path]] = None,
         preprocessor_class: Type[GymPreprocessor] = None,
         preprocessor_kwargs: Optional[Dict[str, Any]] = None,
@@ -96,7 +95,7 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
         """
         Build SAC.
 
-        :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...).
+        :param policy: The policy model to use (MlpPolicy).
         :param env: The environment to learn from (if registered in Gym, can be str).
         :param lr_value: The learning rate, it can be a constant or a function
             of the current progress remaining (from 1 to 0). Defaults to 3e-4.
@@ -107,7 +106,6 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
             linear decay. Defaults to 1e-8.
         :param lr_linear_end_fraction: The fraction of total steps at which the linear
             decay should reach its end value. Defaults to 0.005.
-        :param n_steps: Not used in SAC (kept for API compatibility). Defaults to 1.
         :param batch_size: Minibatch size for each gradient update. Defaults to 256.
         :param gamma: The discount factor. Defaults to 0.99.
         :param tau: The soft update coefficient ("Polyak update", between 0 and 1). Defaults to 0.005.
@@ -152,7 +150,7 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
             lr_warmup_fraction=lr_warmup_fraction,
             lr_linear_end_value=lr_linear_end_value,
             lr_linear_end_fraction=lr_linear_end_fraction,
-            n_steps=n_steps,
+            n_steps=1,  # NStepReplayBuffer not implemented
             gamma=gamma,
             tau=tau,
             learning_starts=learning_starts,
@@ -249,20 +247,20 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
         else:
             self.ent_coef_tensor = torch.tensor(float(self.ent_coef), device=self.device)
 
-        # Setup Accelerate support
+        # Setup Accelerate
         self.accelerator = Accelerator(
             gradient_accumulation_plugin=GradientAccumulationPlugin(sync_with_dataloader=True, num_steps=1),
             mixed_precision=self.mixed_precision,
             cpu=torch.device("cpu") == self.device,
         )
-        self.policy, self.policy.actor.optimizer, self.policy.critic.optimizer =  self.accelerator.prepare(self.policy, self.policy.actor.optimizer, self.policy.critic.optimizer)
+        self.policy, self.policy.actor.optimizer, self.policy.critic.optimizer = self.accelerator.prepare(self.policy, self.policy.actor.optimizer, self.policy.critic.optimizer)
         if self.ent_coef_optimizer: self.ent_coef_optimizer = self.accelerator.prepare(self.ent_coef_optimizer)
         self.policy.optimizer = [self.policy.actor.optimizer, self.policy.critic.optimizer] + ([self.ent_coef_optimizer] if self.ent_coef_optimizer is not None else [])
         self._create_aliases()
         # self.accelerator.dataloader_config.non_blocking = True
         self.replay_buffer.set_accelerator(self.accelerator)
-        
-        # Running mean and running var
+
+        # Running mean and running var for batch norm
         self.batch_norm_stats = get_parameters_by_name(self.critic, ["running_"])
         self.batch_norm_stats_target = get_parameters_by_name(self.critic_target, ["running_"])
         # Target entropy is used when learning the entropy coefficient
@@ -368,7 +366,6 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
         :param log_interval: Log data every ``log_interval`` episodes
         :return:
         """
-
         assert isinstance(replay_buffer, ReplayBuffer), f"{replay_buffer} doesn't support off-policy algorithms."
         assert train_freq.frequency > 0, "Should at least collect one step or episode."
 
@@ -533,7 +530,7 @@ class SAC(OffPolicyAlgorithm, InferenceInterface):
                 # Copy running stats, see GH issue #996
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
 
-            if self._n_updates % self.gradient_steps == 0:
+            if self._n_updates % gradient_steps == 0:
                 break
 
         self.logger.stop_timer("s/epoch")

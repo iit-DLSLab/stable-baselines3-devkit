@@ -29,8 +29,6 @@ class Actor(BasePolicy):
     :param observation_space: Observation space
     :param action_space: Action space
     :param net_arch: Network architecture
-    :param features_extractor: Network to extract features
-        (a CNN when using images, a nn.Flatten() layer otherwise)
     :param features_dim: Number of features
     :param activation_fn: Activation function
     :param use_sde: Whether to use State Dependent Exploration or not
@@ -52,7 +50,6 @@ class Actor(BasePolicy):
         observation_space: spaces.Space,
         action_space: spaces.Box,
         net_arch: list[int],
-        features_extractor: nn.Module,
         features_dim: int,
         activation_fn: type[nn.Module] = nn.ReLU,
         use_sde: bool = False,
@@ -65,7 +62,6 @@ class Actor(BasePolicy):
         super().__init__(
             observation_space,
             action_space,
-            features_extractor=features_extractor,
             normalize_images=normalize_images,
             squash_output=True,
         )
@@ -101,24 +97,6 @@ class Actor(BasePolicy):
             self.action_dist = SquashedDiagGaussianDistribution(action_dim)  # type: ignore[assignment]
             self.mu = nn.Linear(last_layer_dim, action_dim)
             self.log_std = nn.Linear(last_layer_dim, action_dim)  # type: ignore[assignment]
-
-    def _get_constructor_parameters(self) -> dict[str, Any]:
-        data = super()._get_constructor_parameters()
-
-        data.update(
-            dict(
-                net_arch=self.net_arch,
-                features_dim=self.features_dim,
-                activation_fn=self.activation_fn,
-                use_sde=self.use_sde,
-                log_std_init=self.log_std_init,
-                full_std=self.full_std,
-                use_expln=self.use_expln,
-                features_extractor=self.features_extractor,
-                clip_mean=self.clip_mean,
-            )
-        )
-        return data
 
     def get_std(self) -> th.Tensor:
         """
@@ -165,6 +143,7 @@ class Actor(BasePolicy):
         log_std = self.log_std(latent_pi)  # type: ignore[operator]
         # Original Implementation to cap the standard deviation
         log_std = th.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        
         return mean_actions, log_std, {}
 
     def forward(self, obs: PyTorchObs, deterministic: bool = False) -> th.Tensor:
@@ -173,8 +152,8 @@ class Actor(BasePolicy):
         return self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
 
     def action_log_prob(self, obs: PyTorchObs) -> tuple[th.Tensor, th.Tensor]:
+        """Return action and associated log probability."""
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
-        # return action and associated log prob
         return self.action_dist.log_prob_from_params(mean_actions, log_std, **kwargs)
 
     def _predict(self, observation: PyTorchObs, deterministic: bool = False) -> th.Tensor:
@@ -215,7 +194,6 @@ class ContinuousCritic(BaseModel):
         observation_space: spaces.Space,
         action_space: spaces.Box,
         net_arch: list[int],
-        features_extractor: BaseFeaturesExtractor,
         features_dim: int,
         activation_fn: type[nn.Module] = nn.ReLU,
         normalize_images: bool = True,
@@ -225,7 +203,6 @@ class ContinuousCritic(BaseModel):
         super().__init__(
             observation_space,
             action_space,
-            features_extractor=features_extractor,
             normalize_images=normalize_images,
         )
 
@@ -276,9 +253,6 @@ class SACPolicy(BasePolicy):
         a positive standard deviation (cf paper). It allows to keep variance
         above zero and prevent it from growing too fast. In practice, ``exp()`` is usually enough.
     :param clip_mean: Clip the mean output when using gSDE to avoid numerical instability.
-    :param features_extractor_class: Features extractor to use.
-    :param features_extractor_kwargs: Keyword arguments
-        to pass to the features extractor.
     :param normalize_images: Whether to normalize images or not,
          dividing by 255.0 (True by default)
     :param optimizer_class: The optimizer to use,
@@ -299,14 +273,12 @@ class SACPolicy(BasePolicy):
         observation_space: spaces.Space,
         action_space: spaces.Box,
         lr_schedule: Schedule,
-        net_arch: list[int] | dict[str, list[int]] | None = None,
+        net_arch: list[int] | dict[str, list[int]] = [256, 256],
         activation_fn: type[nn.Module] = nn.ReLU,
         use_sde: bool = False,
         log_std_init: float = -3,
         use_expln: bool = False,
         clip_mean: float = 2.0,
-        features_extractor_class: type[BaseFeaturesExtractor] = FlattenExtractor,
-        features_extractor_kwargs: dict[str, Any] | None = None,
         normalize_images: bool = True,
         optimizer_class: type[th.optim.Optimizer] = th.optim.Adam,
         optimizer_kwargs: dict[str, Any] | None = None,
@@ -317,16 +289,11 @@ class SACPolicy(BasePolicy):
         super().__init__(
             observation_space,
             action_space,
-            features_extractor_class,
-            features_extractor_kwargs,
             optimizer_class=optimizer_class,
             optimizer_kwargs=optimizer_kwargs,
             squash_output=True,
             normalize_images=normalize_images,
         )
-
-        if net_arch is None:
-            net_arch = [256, 256]
 
         actor_arch, critic_arch = get_actor_critic_arch(net_arch)
 
@@ -335,6 +302,7 @@ class SACPolicy(BasePolicy):
         self.net_args = {
             "observation_space": self.observation_space,
             "action_space": self.action_space,
+            "features_dim": self.observation_space["state"].shape[0]+self.observation_space["privileged"].shape[0],
             "net_arch": actor_arch,
             "activation_fn": self.activation_fn,
             "normalize_images": normalize_images,
@@ -359,58 +327,34 @@ class SACPolicy(BasePolicy):
 
         self.share_features_extractor = share_features_extractor
 
-        self._build(lr_schedule)
-
-    def _build(self, lr_schedule: Schedule) -> None:
-        self.actor = self.make_actor()
+        self.actor = Actor(**self.actor_kwargs).to(self.device)
         self.actor.optimizer = self.optimizer_class(
             [{"params": self.actor.parameters(), "lr": lr_schedule(1)}],
-            **self.optimizer_kwargs,
+            **(self.optimizer_kwargs or {}),
         )
 
         if self.share_features_extractor:
-            self.critic = self.make_critic(features_extractor=self.actor.features_extractor)
+            self.critic = ContinuousCritic(**self.critic_kwargs).to(self.device)  # use the feature actor feature extractor 
             # Do not optimize the shared features extractor with the critic loss
             # otherwise, there are gradient computation issues
             critic_parameters = [param for name, param in self.critic.named_parameters() if "features_extractor" not in name]
         else:
             # Create a separate features extractor for the critic
             # this requires more memory and computation
-            self.critic = self.make_critic(features_extractor=None)
+            self.critic = ContinuousCritic(**self.critic_kwargs).to(self.device)
             critic_parameters = list(self.critic.parameters())
 
         # Critic target should not share the features extractor with critic
-        self.critic_target = self.make_critic(features_extractor=None)
+        self.critic_target = ContinuousCritic(**self.critic_kwargs).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         self.critic.optimizer = self.optimizer_class(
             [{"params": critic_parameters, "lr": lr_schedule(1)}],
-            **self.optimizer_kwargs,
+            **(self.optimizer_kwargs or {}),
         )
 
         # Target networks should always be in eval mode
         self.critic_target.set_training_mode(False)
-
-    def _get_constructor_parameters(self) -> dict[str, Any]:
-        data = super()._get_constructor_parameters()
-
-        data.update(
-            dict(
-                net_arch=self.net_arch,
-                activation_fn=self.net_args["activation_fn"],
-                use_sde=self.actor_kwargs["use_sde"],
-                log_std_init=self.actor_kwargs["log_std_init"],
-                use_expln=self.actor_kwargs["use_expln"],
-                clip_mean=self.actor_kwargs["clip_mean"],
-                n_critics=self.critic_kwargs["n_critics"],
-                lr_schedule=self._dummy_schedule,  # dummy lr schedule, not needed for loading policy alone
-                optimizer_class=self.optimizer_class,
-                optimizer_kwargs=self.optimizer_kwargs,
-                features_extractor_class=self.features_extractor_class,
-                features_extractor_kwargs=self.features_extractor_kwargs,
-            )
-        )
-        return data
 
     def reset_noise(self, batch_size: int = 1) -> None:
         """
@@ -419,14 +363,6 @@ class SACPolicy(BasePolicy):
         :param batch_size:
         """
         self.actor.reset_noise(batch_size=batch_size)
-
-    def make_actor(self, features_extractor: BaseFeaturesExtractor | None = None) -> Actor:
-        actor_kwargs = self._update_features_extractor(self.actor_kwargs, features_extractor)
-        return Actor(**actor_kwargs).to(self.device)
-
-    def make_critic(self, features_extractor: BaseFeaturesExtractor | None = None) -> ContinuousCritic:
-        critic_kwargs = self._update_features_extractor(self.critic_kwargs, features_extractor)
-        return ContinuousCritic(**critic_kwargs).to(self.device)
 
     def forward(self, obs: PyTorchObs, deterministic: bool = False) -> th.Tensor:
         return self._predict(obs, deterministic=deterministic)
