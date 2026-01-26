@@ -22,8 +22,8 @@ gym.register(
 """
 
 import gymnasium as gym
-from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_d.flat_env_cfg import (
-    AnymalDFlatEnvCfg,
+from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_c.flat_env_cfg import (
+    AnymalCFlatEnvCfg,
 )
 from isaaclab_tasks.manager_based.manipulation.lift.config.franka.joint_pos_env_cfg import (
     FrankaCubeLiftEnvCfg,
@@ -53,11 +53,11 @@ gym.register(
 )
 
 gym.register(
-    id="Isaac-Velocity-Flat-Anymal-D-v0",
+    id="Isaac-Velocity-Flat-Anymal-C-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": AnymalDFlatEnvCfg,
+        "env_cfg_entry_point": AnymalCFlatEnvCfg,
         "custom_sac_mlp_cfg_entry_point": f"{agents.__name__}.Isaac:velocity_sac_mlp_cfg.yaml",
         "custom_fastsac_mlp_cfg_entry_point": f"{agents.__name__}.Isaac:velocity_fastsac_mlp_cfg.yaml",
         "custom_ppo_mlp_cfg_entry_point": f"{agents.__name__}.Isaac:velocity_ppo_mlp_cfg.yaml",

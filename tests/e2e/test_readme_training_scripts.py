@@ -92,7 +92,7 @@ class TestTrainScriptIntegration:
 
         cmd = [
             sys.executable, "train.py",
-            "--task", "Isaac-Velocity-Flat-Anymal-D-v0",
+            "--task", "Isaac-Velocity-Flat-Anymal-C-v0",
             "--envsim", "isaaclab",
             "--headless",
             "--num_envs", "2",
@@ -182,7 +182,7 @@ class TestTrainScriptIntegration:
 
         cmd = [
             sys.executable, "train.py",
-            "--task", "Isaac-Velocity-Flat-Anymal-D-v0",
+            "--task", "Isaac-Velocity-Flat-Anymal-C-v0",
             "--envsim", "isaaclab",
             "--headless",
             "--num_envs", "2",
@@ -326,7 +326,7 @@ class TestPredictScriptIntegration:
 
         cmd = [
             sys.executable, "predict.py",
-            "--task", "Isaac-Velocity-Flat-Anymal-D-v0",
+            "--task", "Isaac-Velocity-Flat-Anymal-C-v0",
             "--envsim", "isaaclab",
             "--num_envs", "1",
             "--val_episodes", "2",  # Just 2 episodes
