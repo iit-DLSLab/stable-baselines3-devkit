@@ -168,6 +168,36 @@ python predict.py \
 [//]: # (`python predict.py --task StackCube-v1 --envsim maniskill --num_envs 1 --val_episodes 100 --agent Maniskill/maniskill_sl_inference_cfg --device cuda --sim_device cuda --resume --checkpoint /media/data01/PycharmProjects/dev/src/save/SL/2026-01-07_01-51-05/best_model.zip`)
 ## Usage Guide
 
+### Shared data format
+Data flows from the data source to the policy after being converted to a shared format before the policy-specific processing.
+
+The element that performs the conversion to what the policy expects is the `env_2_policy` specific processor. There you define the `proc_observation_space`, `proc_action_space`, and in the `forward` / `forward_post` methods you perform pre- and post-processing to match the defined processed spaces (that is what the policy expects).
+The processor expects data in the shared data format, whether it comes from a dataset or an environment, structured similarly as:
+```
+  observation_space = spaces.Dict({
+      "state": ...
+      "images": ...
+  })
+```
+- For LeRobot datasets, we process data to assume such shape in `common.datasets.dataloader:DataLoader`, then the processor does the last operations specifically for the policy. Note that LeRobot datasets should be consistent enough to be managed by the same dataloader.
+- For environments, we process data to assume such shape in `common.envs.sb3_env_wrapper:Sb3EnvStdWrapper`, then the processor does the last operations specifically for the policy.
+
+The hard reality is that each data source differs, so you will likely need a wrapper class. For example, `ManiSkillEnvStdWrapper` prepares the data this way:
+```
+  self.single_observation_space = spaces.Dict({
+      "policy": spaces.Box(-math.inf, math.inf, self.env.single_observation_space["state"].shape),
+      **{cam_name: cam["rgb"] for cam_name, cam in self.env.single_observation_space["sensor_data"].items()}
+  })
+```
+because `Sb3EnvStdWrapper` (in this case wrapping `ManiSkillEnvStdWrapper(ManiSkillEnv)`) establishes a general observation space that has to be true for all possible wrapped environments being:
+```
+  observation_space = spaces.Dict({
+      "state": self.env.single_observation_space["policy"],
+      "images": spaces.Dict({k:v for k, v in self.env.single_observation_space.items() if k!="policy"})
+  })
+```
+TLDR: If your environment does not work well with how `Sb3EnvStdWrapper` groups the data, create a wrapper chain like `Sb3EnvStdWrapper(CustomEnvStdWrapper(CustomEnv))` — this way you maintain datasource interchangeability. Then create a `customenv_2_policy` processor to handle your specific needs.
+
 ### Creating a New Policy
 
 Policies must inherit from `BasePolicy` and implement required methods:
