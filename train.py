@@ -1,7 +1,8 @@
 """Script to train RL agent using Stable Baselines3."""
 
 import os
-from copy import deepcopy
+import subprocess
+import sys
 
 import gymnasium as gym
 
@@ -15,9 +16,7 @@ from common.utils import get_checkpoint_path, print_dict
 OVERWRITE_POLICY_ARGS = True
 
 
-def main():
-    global _args_cli, _env_cfg, _agent_cfg
-    args_cli, env_cfg, agent_cfg = deepcopy(_args_cli), deepcopy(_env_cfg), deepcopy(_agent_cfg)
+def main(args_cli, env_cfg, agent_cfg):
 
     if args_cli.envsim == "isaaclab":
         from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
@@ -144,10 +143,13 @@ def main():
 
 if __name__ == "__main__":
     # Get arguments
-    global _args_cli, _env_cfg, _agent_cfg
-    _args_cli = get_args()
+    _original_argv = sys.argv.copy()
+    _args_cli, _env_cfg, _agent_cfg = get_args(), None, None
 
-    if _args_cli.envsim == "isaaclab":
+    if _args_cli.sweep_id is not None and not _args_cli._sweep_child:
+        # Skip initialization - we'll spawn subprocesses that initialize fresh
+        pass
+    elif _args_cli.envsim == "isaaclab":
         from isaaclab.app import AppLauncher
 
         # launch omniverse simulator app
@@ -213,16 +215,34 @@ if __name__ == "__main__":
             del _agent_cfg["env_cfg"]
 
     # launch script
-    if _args_cli.sweep_id is not None:
+    if _args_cli.sweep_id is not None and not _args_cli._sweep_child:
+        # Spawn subprocesses for each sweep run
         import wandb
 
         if not _args_cli.wandb:
             print("Since `sweep_id` has been specified WandB logging is enabled in automatic!")
             _args_cli.wandb = True
-        wandb.agent(_args_cli.sweep_id, main)
-    else:
-        main()
 
-    if _args_cli.envsim == "isaaclab":
-        simulation_app.close()
-    # **customize at necessity with required functions call for termination**
+        def run_sweep_child():
+            """Spawn a subprocess for each sweep run to allow fresh env initialization."""
+            # call wandb.init() and resume the run in the subprocess
+            with wandb.init() as run:
+                run_id = run.id
+                # Build command with original args, add flags for child to resume the wandb run
+                cmd = [sys.executable] + _original_argv + ["--_sweep_child", "--wandb_run", run_id]
+
+                # Clean WANDB env vars so child can init fresh (keep only API credentials)
+                env = {k: v for k, v in os.environ.items() if not k.startswith("WANDB_") or k in ("WANDB_API_KEY", "WANDB_ENTITY")}
+
+                print(f"[SWEEP] Spawning child process for run {run_id}")
+                result = subprocess.run(cmd, env=env)
+                if result.returncode != 0:
+                    print(f"[SWEEP] Child process exited with code {result.returncode}")
+
+        wandb.agent(_args_cli.sweep_id, run_sweep_child)
+    else:
+        main(_args_cli, _env_cfg, _agent_cfg)
+
+        if _args_cli.envsim == "isaaclab":
+            simulation_app.close()
+        # **customize at necessity with required functions call for termination**

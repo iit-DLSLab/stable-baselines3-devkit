@@ -166,15 +166,17 @@ class Logger(SB3Logger):
                 assert wandb is not None, "wandb is not installed, you can use `pip install wandb` to do so"
 
             resume_id = None
-            if os.path.exists("wandb") and args_cli.resume:
+            # If wandb_run is explicitly provided, use it directly (for sweep child or explicit resume)
+            if args_cli.wandb_run and args_cli.wandb_run != "-1":
+                resume_id = args_cli.wandb_run
+            elif os.path.exists("wandb") and args_cli.resume:
+                # Auto-detect last run from wandb folder
                 wandb_logs = sorted(
                     filter(lambda x: "run-" in x, os.listdir("wandb")),
                     key=lambda x: os.path.getmtime(os.path.join("wandb", x)),
                 )
                 if args_cli.wandb_run == "-1" and len(wandb_logs) > 0:
                     resume_id = wandb_logs[-1].split("-")[-1]
-                elif args_cli.wandb_run != "-1":
-                    resume_id = args_cli.wandb_run
             wandb.init(settings=wandb.Settings(start_method="thread"), project="sb3-devkit", id=resume_id, resume=resume_id is not None, allow_val_change=True, name=args_cli.experiment_name)
 
         # setup superclass (StableBaseline3 Logger)

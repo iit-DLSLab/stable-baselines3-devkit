@@ -41,6 +41,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--experiment_name", type=str, default=None, help="Name of the experiment.")
     parser.add_argument("--sim_device", type=str, default=None, help="Device to run the simulation on. If not specified it defaults to `device`")
     parser.add_argument("--sweep_id", type=str, default=None, help="W&B sweep ID to run an agent for.")
+    parser.add_argument("--_sweep_child", action="store_true", default=False, help="Internal flag: indicates this is a sweep child process.")
     parser.add_argument("--wandb_run",type=str,default=None,help="Id of the wandb run to load when `resume`=True. If -1: will use the last run id.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Saved model checkpoint path. If `None` will load the last checkpoint in given `experiment_name` folder.")
     AppLauncher.add_app_launcher_args(parser)
