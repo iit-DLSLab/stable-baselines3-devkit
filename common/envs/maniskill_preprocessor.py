@@ -61,7 +61,7 @@ class Maniskill_2_Mlp(GymPreprocessor):
         # Truncate taking only the firsts elements which are the joint positions as requested by the policy
         norm_obs["privileged"] = norm_obs["state"][..., norm_obs["state"].shape[-1]-min(self.proc_observation_space["privileged"].shape[-1], norm_obs["state"].shape[-1]) :]
         if self.task == "TwoRobotStackCube-v1":
-            norm_obs["state"] = torch.cat([norm_obs["state"][..., :18], norm_obs["state"][..., 18 : 18 + 18]], -1)
+            norm_obs["state"] = torch.cat([norm_obs["state"][..., :9], norm_obs["state"][..., 18 : 18 + 18]], -1)
         else:
             norm_obs["state"] = norm_obs["state"][..., : self.proc_observation_space["state"].shape[-1]]
         if "images" in norm_obs:

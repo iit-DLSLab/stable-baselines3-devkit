@@ -4,8 +4,7 @@ from torch import nn
 
 class LSTM(nn.Module):
     """
-    LSTM baseline that processes raw RGB images and scalar states.
-    Comparable to your transformer but uses LSTM for temporal modeling.
+    LSTM baseline for temporal modeling that processes raw RGB images and scalar states.
     """
 
     def __init__(self, image_shape=(1, 3, 94, 94), state_dim=2, dim_model=512, lstm_hidden=512, n_lstm_layers=4, dropout=0.1, final_ffn=False):

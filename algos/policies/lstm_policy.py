@@ -96,6 +96,7 @@ class LSTMPolicy(BasePolicy):
         state, images, tokenized_prompt, tokenized_prompt_mask = obs["state"], obs["images"], obs.get("tokenized_prompt"), obs.get("tokenized_prompt_mask")  # noqa: F841
 
         if len(images.shape) == 5:
+            state = state.unsqueeze(1)
             images = images.unsqueeze(1)
 
         bs, time_seq, num_cameras, c, h, w = images.shape
@@ -144,7 +145,10 @@ class LSTMPolicy(BasePolicy):
     @torch.no_grad()
     def predict_seq(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward batched (naive/dumb non-optimized method as we recompute every time the whole sequence returning only the last timestep output)
+        Predict actions using batched sequential processing.
+        Inference method that maintains a queue of past observations and recomputes the entire sequence each time.
+        Useful for certain evaluation scenarios.
+        Note: This is a naive/not efficient implementation, but for LSTMs and TCNs (baselines) the delay is acceptable.
         """
         # Switch to eval mode
         mode = self.training

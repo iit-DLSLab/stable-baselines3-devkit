@@ -5,7 +5,6 @@ import torch
 from lerobot.datasets.factory import resolve_delta_timestamps
 from lerobot.datasets.lerobot_dataset import (
     LeRobotDataset,
-    LeRobotDatasetMetadata,
     MultiLeRobotDataset,
 )
 from lerobot.datasets.transforms import ImageTransforms
@@ -93,12 +92,12 @@ class DataLoader(TorchDataLoader):
                             self.device
                         )
                     elif isinstance(batch[0][k], (list, tuple, np.ndarray)):
-                        raise Exception("What case is that?")
+                        raise Exception("Not implemented.")
                         # result["obs"]["images"][obs_key] = torch.stack([torch.tensor(item[k]) for item in batch], dim=0).to(self.device)
                 elif isinstance(batch[0][k], torch.Tensor):
                     result["obs"][obs_key] = torch.stack([item[k] for item in batch], dim=0).to(self.device)
                 elif isinstance(batch[0][k], (list, tuple, np.ndarray)):  # noqa: R506
-                    raise Exception("What case is that?")
+                    raise Exception("Not implemented.")
                     # result["obs"][obs_key] = torch.stack([torch.tensor(item[k]) for item in batch], dim=0).to(self.device)
                 else:
                     # for non-tensor types, just collect them
@@ -204,17 +203,11 @@ def make_dataset(dataset_cfg: Dict[str, Any]) -> LeRobotDataset | MultiLeRobotDa
     image_transforms = ImageTransforms(dataset_cfg.image_transforms) if dataset_cfg.image_transforms.enable else None
 
     if isinstance(dataset_cfg.dataset_repo_id, str):
-        ds_meta = LeRobotDatasetMetadata(
-            dataset_cfg.dataset_repo_id,
-            revision=dataset_cfg.dataset_revision,
-            root=dataset_cfg.dataset_root,
-            force_cache_sync=True,
-        )
         resolve_delta_timestamps(dataset_cfg)
         dataset = LeRobotDataset(
             dataset_cfg.dataset_repo_id,
-            root=dataset_cfg.dataset_root,
-            revision=getattr(dataset_cfg, "revision", None),
+            root=dataset_cfg.dataset_root or None,
+            revision=getattr(dataset_cfg, "dataset_revision", None),
             episodes=getattr(dataset_cfg, "episodes", None),
             delta_timestamps=getattr(dataset_cfg, "delta_timestamps", {}),
             image_transforms=image_transforms,

@@ -6,8 +6,12 @@ from dataclasses import is_dataclass
 from typing import Any, Dict, TypeVar
 
 import hydra
-from isaaclab.app import AppLauncher
 from omegaconf import DictConfig, OmegaConf
+
+try:
+    from isaaclab.app import AppLauncher
+except ImportError:  # IsaacLab is only needed for --envsim isaaclab, whose cfg loader already imports it lazily
+    AppLauncher = None
 
 from common.utils import lists_to_tuples
 
@@ -15,13 +19,14 @@ T = TypeVar("T")
 
 
 def get_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train an agent with Stable-Baselines3 XL.")
+    parser = argparse.ArgumentParser(description="Train an agent with Stable-Baselines3 (devkit).")
     parser.add_argument("--trajectory", action="store_true", default=False, help="Record trajectories during training.")
     parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
     parser.add_argument("--video_interval", type=int, default=1000, help="Every many steps record video of an episode.")
     parser.add_argument("--log_interval", type=int, default=10, help="Every many steps log training stats.")
     parser.add_argument("--val_interval", type=int, default=100, help="Every many steps record run validation.")
     parser.add_argument("--val_episodes", type=int, default=20, help="How many simulation episodes to run in validation.")
+    parser.add_argument("--eval_output", type=str, default=None, help="Optional JSON path for per-episode evaluation results.")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of subprocesses to sample from a dataloader.")
     parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
     parser.add_argument("--rollout_steps", type=int, default=None, help="Number of env steps to collect per rollout.")
@@ -29,6 +34,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=None, help="Number of samples per batch/rollout.")
     parser.add_argument("--num_mini_batch", type=int, default=None, help="Number mini-batches/updates during a batch/rollout.")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=None, help="Number of steps of accumulation per mini-batch.")
+    parser.add_argument("--learning_rate", type=float, default=None, help="Override the configured policy/value learning rate.")
+    parser.add_argument("--target_kl", type=float, default=None, help="Override the PPO target KL used by the adaptive safety guard.")
+    parser.add_argument("--adaptive_lr_min", type=float, default=None, help="Override the minimum LR reachable by the adaptive KL controller.")
     parser.add_argument("--task", type=str, default=None, help="Name of the task.")
     parser.add_argument("--agent", type=str, default=None, help="Name of the agent.")
     parser.add_argument("--envsim", type=str, default=None, help="Simulation environment.")
@@ -65,14 +73,14 @@ def get_args() -> argparse.Namespace:
 
 
 def get_isaac_cfg(args_cli: argparse.Namespace):
-    from isaaclab.envs import DirectMARLEnvCfg, DirectRLEnvCfg, ManagerBasedRLEnvCfg
+    from isaaclab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
     from isaaclab_tasks.utils.hydra import hydra_task_config
 
     env_cfg, agent_cfg = None, None
 
     # Hydra configs management
     @hydra_task_config(args_cli.task, f"{args_cli.agent}_cfg_entry_point")
-    def get_hydra_cfg(_env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, _agent_cfg: dict):
+    def get_hydra_cfg(_env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, _agent_cfg: dict):
         nonlocal env_cfg, agent_cfg
         # override configurations with non-hydra CLI arguments
         _env_cfg.seed = args_cli.seed if args_cli.seed is not None else _agent_cfg["seed"]
@@ -97,6 +105,12 @@ def get_isaac_cfg(args_cli: argparse.Namespace):
         for cfg in cfgs:
             if getattr(args_cli, cfg) is not None:
                 _agent_cfg[cfg] = getattr(args_cli, cfg)
+        if args_cli.learning_rate is not None:
+            _agent_cfg["lr_value"] = args_cli.learning_rate
+        if args_cli.target_kl is not None:
+            _agent_cfg["target_kl"] = args_cli.target_kl
+        if args_cli.adaptive_lr_min is not None:
+            _agent_cfg["adaptive_lr_min"] = args_cli.adaptive_lr_min
 
     get_hydra_cfg()
 
@@ -131,6 +145,12 @@ def get_cfg(args_cli: argparse.Namespace) -> Dict[str, Any] | T:
         for cfg in cfgs:
             if getattr(args_cli, cfg) is not None:
                 _agent_cfg[cfg] = getattr(args_cli, cfg)
+        if args_cli.learning_rate is not None:
+            _agent_cfg["lr_value"] = args_cli.learning_rate
+        if args_cli.target_kl is not None:
+            _agent_cfg["target_kl"] = args_cli.target_kl
+        if args_cli.adaptive_lr_min is not None:
+            _agent_cfg["adaptive_lr_min"] = args_cli.adaptive_lr_min
 
         agent_cfg = lists_to_tuples(_agent_cfg)
 

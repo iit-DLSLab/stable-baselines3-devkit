@@ -258,7 +258,7 @@ class BaseAlgorithm(ABC):
         For instance, to have a vectorized environment
         or to re-order the image channels.
 
-        :param env:
+        :param env: The environment to wrap (Gym environment or string identifier)
         :param verbose: Verbosity level: 0 for no output, 1 for indicating wrappers used
         :param monitor_wrapper: Whether to wrap the env in a ``Monitor`` when possible.
         :return: The wrapped environment.
@@ -348,7 +348,7 @@ class BaseAlgorithm(ABC):
         Compute current progress remaining (starts from 1 and ends to 0)
 
         :param num_timesteps: current number of timesteps
-        :param total_timesteps:
+        :param total_timesteps: total number of timesteps for training
         """
         self._current_progress_remaining = 1.0 - float(num_timesteps) / float(total_timesteps)
 
@@ -635,7 +635,7 @@ class BaseAlgorithm(ABC):
         Set the seed of the pseudo-random generators
         (python, numpy, pytorch, gym, action_space)
 
-        :param seed:
+        :param seed: Random seed for reproducible results (optional)
         """
         if seed is None:
             return
@@ -836,13 +836,6 @@ class BaseAlgorithm(ABC):
         model.__dict__.update(data)
         model.__dict__.update(kwargs)
         model._setup_model()
-
-        # a, b, c = load_from_zip_file(
-        #     "save/Isaac-Lift-Cube-Franka-v0/2025-12-18_19-01-02/model_921600000_steps.zip"[
-        #         :-len(".zip")], device="cpu", custom_objects=custom_objects,
-        #     print_system_info=print_system_info, )
-        # params["policy"] = {k:v for k,v in b["policy"].items() if "value_net" in k}
-        # del params["policy.optimizer"]
 
         try:
             # It is possible that Preprocessor stat parameters do not match exactly

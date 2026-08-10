@@ -293,8 +293,13 @@ class Sb3EnvStdWrapper(VecEnv):
         obs = {}
         for k, v in obs_dict.items():
             if k == "policy":
-                obs["state"] = v.detach().to(self.backand_device)
+                if isinstance(v, dict):
+                    obs["state"] = {key: val.detach().to(self.backand_device) for key, val in v.items()}
+                else:
+                    obs["state"] = v.detach().to(self.backand_device)
             elif k in self.image_keys:  # **customize at necessity**
+                if not isinstance(v, torch.Tensor):
+                    raise NotImplementedError(f"Camera keys should contain tensors, but received: {type(v)}")
                 imgs = obs.get("images", {})
                 imgs.update({k: v.detach().to(self.backand_device)})
                 obs["images"] = imgs
@@ -324,6 +329,13 @@ class Sb3EnvStdWrapper(VecEnv):
             "rew": torch.where(episode_mask, self._ep_rew_buf, torch.full_like(self._ep_rew_buf, float("nan"))),
             "len": torch.where(episode_mask, self._ep_len_buf, torch.full_like(self._ep_len_buf, float("nan"))),
         }
+        if isinstance(extras, dict) and "success" in extras:
+            _succ = extras["success"]
+            if isinstance(_succ, torch.Tensor):
+                _succ = _succ.to(self._ep_rew_buf.device).float().reshape(-1)
+                infos["episode"]["rollout/success_rate"] = torch.where(
+                    episode_mask, _succ, torch.full_like(_succ, float("nan"))
+                )
         # Handle terminal observations. Note: we haven't the last observation pre-reset so we use the current
         if isinstance(obs, dict):
             infos["terminal_obs"] = {}
